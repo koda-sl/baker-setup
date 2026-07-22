@@ -43,15 +43,6 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-# ── Reattach the terminal when piped ────────────────────────────────────────
-# `curl … | bash` makes the script's stdin the download pipe, so every prompt
-# (this script's y/N, plus `gh auth login` / `vercel login`) would read EOF and
-# bail. Reconnect stdin to the controlling terminal so the interactive steps work
-# no matter how the script was launched.
-if [[ ! -t 0 && -r /dev/tty ]]; then
-  exec </dev/tty
-fi
-
 # Homebrew prefix differs by chip: Apple Silicon uses /opt/homebrew, Intel /usr/local.
 if [[ "$(uname -m)" == "arm64" ]]; then
   BREW_PREFIX="/opt/homebrew"
@@ -68,6 +59,13 @@ ensure_profile_line() {
   touch "$PROFILE"
   grep -qsF "$line" "$PROFILE" || printf '\n%s\n' "$line" >> "$PROFILE"
 }
+
+# All steps live inside main() so that when the script is PIPED into bash
+# (curl … | bash), we can hand main() the real terminal on stdin. Piped bash
+# reads the script itself from stdin — redirecting stdin mid-script would make
+# bash read the remaining script from the keyboard (a silent hang). Defining
+# main() first parses everything; only the last line executes it.
+main() {
 
 # ── Step 0: access checklist ────────────────────────────────────────────────
 step "Before we start — access you must already have"
@@ -358,3 +356,16 @@ warn "  1. Read each  [err]  line above — every one tells you exactly what to 
 warn "  2. Open a NEW terminal window (so the tools just installed are on your PATH)."
 warn "  3. Run this script again — already-done steps are skipped automatically."
 exit 1
+
+}
+
+# ── Entry point ─────────────────────────────────────────────────────────────
+# When piped (curl … | bash), stdin is the script — give main() the real
+# terminal instead so prompts (y/N, gh auth login, vercel login) work.
+# The subshell probe actually OPENS /dev/tty: `-r` alone lies when there is no
+# controlling terminal (e.g. CI), where the open fails with ENXIO.
+if [[ ! -t 0 ]] && (exec </dev/tty) 2>/dev/null; then
+  main </dev/tty
+else
+  main
+fi
