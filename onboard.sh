@@ -26,6 +26,12 @@ VERCEL_PROJECT="baker-dashboard"
 REQUIRED_PNPM="10.28.0"
 REQUIRED_NODE_MAJOR="22"
 CONDUCTOR_URL="https://conductor.build"
+# Copy of PREFLIGHT_CODEGRAPH_VERSION. This script runs standalone before the repo
+# exists, so it cannot source preflight.sh. Drift is self-correcting rather than
+# checked: ensure_codegraph re-installs on any version mismatch, so a stale pin
+# here is fixed by the first workspace setup or dev:doctor run.
+CODEGRAPH_VERSION="v1.5.0"
+CODEGRAPH_INSTALL_URL="https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh"
 
 # ── Logging (matches scripts/lib/preflight.sh) ──────────────────────────────
 info()    { printf '\033[1;34m[info]\033[0m %s\n' "$1"; }
@@ -267,7 +273,35 @@ else
   fail "npm not found — Node ${REQUIRED_NODE_MAJOR} isn't active. Fix Node above and re-run."
 fi
 
-# ── Step 8: Claude Code (Conductor needs it for Claude models) ──────────────
+# ── Step 8: codegraph (agent code index) ────────────────────────────────────
+# Machine layer: one binary in $HOME shared by every workspace. The per-workspace
+# index is built by conductor-setup.sh, and the MCP server is wired by the repo's
+# .mcp.json — so we deliberately do NOT run `codegraph install`, which would
+# rewrite the repo's CLAUDE.md/AGENTS.md and your global agent config.
+#
+# The real reason this belongs in onboarding rather than only in setup: the
+# installer drops the binary in ~/.local/bin, which is NOT on a stock macOS PATH
+# (see /etc/paths). Only this script writes the profile, so only this script can
+# make `codegraph …` work in a plain terminal.
+#
+# Optional tooling — a warn, never a fail: without it agents fall back to plain search.
+step "codegraph (agent code index)"
+ensure_profile_line 'export PATH="$HOME/.local/bin:$PATH"'
+export PATH="$HOME/.local/bin:$PATH"
+if command -v codegraph >/dev/null 2>&1; then
+  success "codegraph $(codegraph version 2>/dev/null || echo present)"
+else
+  info "Installing codegraph ${CODEGRAPH_VERSION}..."
+  curl -fsSL "$CODEGRAPH_INSTALL_URL" | CODEGRAPH_VERSION="$CODEGRAPH_VERSION" sh >/dev/null 2>&1 || true
+  hash -r 2>/dev/null || true
+  if command -v codegraph >/dev/null 2>&1; then
+    success "codegraph ${CODEGRAPH_VERSION} installed"
+  else
+    warn "Couldn't install codegraph — agents fall back to plain search. Your workspace will retry."
+  fi
+fi
+
+# ── Step 9: Claude Code (Conductor needs it for Claude models) ──────────────
 step "Claude Code"
 if command -v claude >/dev/null 2>&1; then
   success "Claude Code present"
@@ -279,7 +313,7 @@ else
   fail "Need Homebrew to install Claude Code."
 fi
 
-# ── Step 9: Conductor app ───────────────────────────────────────────────────
+# ── Step 10: Conductor app ──────────────────────────────────────────────────
 # Conductor is a GUI app (no CLI binary), so we detect the .app bundle rather than
 # a command. Cask: https://formulae.brew.sh/cask/conductor
 step "Conductor"
@@ -312,6 +346,7 @@ report "git"           "$(git --version 2>/dev/null | awk '{print $3}')"
 report "GitHub CLI"    "$(command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && echo 'signed in' || true)"
 report "Vercel"        "$(command -v vercel >/dev/null 2>&1 && vercel whoami 2>/dev/null || true)"
 report "agent-browser" "$(command -v agent-browser >/dev/null 2>&1 && echo 'installed' || true)"
+report "codegraph"     "$(command -v codegraph >/dev/null 2>&1 && echo 'installed' || true)"
 report "Claude Code"   "$(command -v claude >/dev/null 2>&1 && echo 'installed' || true)"
 report "Conductor"     "$([[ -d /Applications/Conductor.app ]] && echo 'installed' || true)"
 
