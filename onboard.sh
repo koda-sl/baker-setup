@@ -32,6 +32,8 @@ CONDUCTOR_URL="https://conductor.build"
 # here is fixed by the first workspace setup or dev:doctor run.
 CODEGRAPH_VERSION="v1.5.0"
 CODEGRAPH_INSTALL_URL="https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh"
+# Public on npm — the same package the sandbox installs (packages/e2b-template/src/template.ts).
+BAKER_CLI_PACKAGE="@koda-sl/baker-cli"
 
 # ── Logging (matches scripts/lib/preflight.sh) ──────────────────────────────
 info()    { printf '\033[1;34m[info]\033[0m %s\n' "$1"; }
@@ -273,7 +275,61 @@ else
   fail "npm not found — Node ${REQUIRED_NODE_MAJOR} isn't active. Fix Node above and re-run."
 fi
 
-# ── Step 8: codegraph (agent code index) ────────────────────────────────────
+# ── Step 8: baker CLI (the platform, from your Mac) ─────────────────────────
+# `baker` is how an agent reads and changes a company's real state — Sessions,
+# Tasks, ads, analytics — without going through the dashboard. It only ever
+# existed inside the sandbox (packages/e2b-template/src/template.ts installs it
+# at build time), which is why it is missing on a laptop and why every attempt to
+# use it locally ended in "command not found".
+#
+# Unlike everything else here, this one is version-sensitive rather than
+# present-or-absent: the sandbox installs @latest on every template build and the
+# backend moves with it, so a Mac pinned to an old copy calls options that were
+# renamed or removed and gets a confusing error instead of an upgrade prompt. So
+# we compare against the published version on every run and re-install on any
+# mismatch — same self-correcting shape as codegraph below.
+#
+# Credentials are deliberately NOT set here. BAKER_API_URL and BAKER_API_KEY are
+# per-company and belong in Conductor's repo environment variables, never in a
+# dotfile on disk — see docs/onboarding.md.
+step "baker CLI"
+if ! command -v npm >/dev/null 2>&1; then
+  fail "npm not found — Node ${REQUIRED_NODE_MAJOR} isn't active. Fix Node above and re-run."
+else
+  baker_have="$(baker --version 2>/dev/null | tr -d '[:space:]')"
+  baker_want="$(npm view "$BAKER_CLI_PACKAGE" version 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "$baker_want" && "$baker_have" == "$baker_want" ]]; then
+    success "baker $baker_have"
+  elif [[ -z "$baker_want" ]]; then
+    # Registry unreachable. An existing copy still works; no copy is a real gap.
+    if [[ -n "$baker_have" ]]; then
+      warn "baker $baker_have installed, but npm is unreachable so we can't check for a newer one."
+    else
+      fail "Couldn't reach npm to install the baker CLI. Run: npm install -g ${BAKER_CLI_PACKAGE}@latest"
+    fi
+  else
+    if [[ -n "$baker_have" ]]; then
+      info "Updating baker CLI ${baker_have} → ${baker_want}..."
+    else
+      info "Installing baker CLI ${baker_want}..."
+    fi
+    npm install -g "${BAKER_CLI_PACKAGE}@latest" >/dev/null 2>&1
+    hash -r 2>/dev/null || true
+    baker_now="$(baker --version 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$baker_now" == "$baker_want" ]]; then
+      success "baker $baker_now"
+    elif [[ -n "$baker_now" ]]; then
+      # Install reported nothing useful and the old copy is still what answers —
+      # almost always another `baker` earlier on PATH, so say that rather than
+      # claiming success on a version we did not just install.
+      fail "baker is still ${baker_now}, not ${baker_want}. Something earlier on your PATH shadows it: run 'which -a baker'."
+    else
+      fail "Couldn't install the baker CLI. Run: npm install -g ${BAKER_CLI_PACKAGE}@latest"
+    fi
+  fi
+fi
+
+# ── Step 9: codegraph (agent code index) ────────────────────────────────────
 # Machine layer: one binary in $HOME shared by every workspace. The per-workspace
 # index is built by conductor-setup.sh, and the MCP server is wired by the repo's
 # .mcp.json — so we deliberately do NOT run `codegraph install`, which would
@@ -301,7 +357,7 @@ else
   fi
 fi
 
-# ── Step 9: Claude Code (Conductor needs it for Claude models) ──────────────
+# ── Step 10: Claude Code (Conductor needs it for Claude models) ─────────────
 step "Claude Code"
 if command -v claude >/dev/null 2>&1; then
   success "Claude Code present"
@@ -313,7 +369,7 @@ else
   fail "Need Homebrew to install Claude Code."
 fi
 
-# ── Step 10: Conductor app ──────────────────────────────────────────────────
+# ── Step 11: Conductor app ──────────────────────────────────────────────────
 # Conductor is a GUI app (no CLI binary), so we detect the .app bundle rather than
 # a command. Cask: https://formulae.brew.sh/cask/conductor
 step "Conductor"
@@ -330,7 +386,7 @@ else
   warn "  • use 'Open GitHub Project' to clone ${GITHUB_REPO}"
 fi
 
-# ── Step 11: keep Spotlight out of the workspaces ───────────────────────────
+# ── Step 12: keep Spotlight out of the workspaces ───────────────────────────
 # Every Conductor workspace is a full checkout with its own node_modules and pnpm
 # store — tens of GB and millions of small files once you have a few open. Spotlight
 # indexes all of it, forever, and the cost is invisible: it shows up as mds,
@@ -371,6 +427,7 @@ report "git"           "$(git --version 2>/dev/null | awk '{print $3}')"
 report "GitHub CLI"    "$(command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && echo 'signed in' || true)"
 report "Vercel"        "$(command -v vercel >/dev/null 2>&1 && vercel whoami 2>/dev/null || true)"
 report "agent-browser" "$(command -v agent-browser >/dev/null 2>&1 && echo 'installed' || true)"
+report "baker CLI"     "$(baker --version 2>/dev/null | tr -d '[:space:]')"
 report "codegraph"     "$(command -v codegraph >/dev/null 2>&1 && echo 'installed' || true)"
 report "Claude Code"   "$(command -v claude >/dev/null 2>&1 && echo 'installed' || true)"
 report "Conductor"     "$([[ -d /Applications/Conductor.app ]] && echo 'installed' || true)"
