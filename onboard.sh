@@ -330,6 +330,31 @@ else
   warn "  • use 'Open GitHub Project' to clone ${GITHUB_REPO}"
 fi
 
+# ── Step 11: keep Spotlight out of the workspaces ───────────────────────────
+# Every Conductor workspace is a full checkout with its own node_modules and pnpm
+# store — tens of GB and millions of small files once you have a few open. Spotlight
+# indexes all of it, forever, and the cost is invisible: it shows up as mds,
+# mds_stores and a fan of mdworker_shared, not as anything with your name on it.
+# Measured on a 14-day-uptime Mac with 9 workspaces: ~180% of a core, sustained,
+# with the machine at load 27 and 26% CPU idle.
+#
+# A .metadata_never_index file at the root of a tree opts the whole tree out. No
+# sudo, effective immediately, and it survives new workspaces because it sits above
+# them — which is why we do it here once rather than per workspace.
+step "Spotlight (keep it out of your workspaces)"
+CONDUCTOR_WORKSPACE_ROOT="${CONDUCTOR_ROOT:-${HOME}/conductor}"
+mkdir -p "$CONDUCTOR_WORKSPACE_ROOT" 2>/dev/null || true
+if [[ -f "${CONDUCTOR_WORKSPACE_ROOT}/.metadata_never_index" ]]; then
+  success "${CONDUCTOR_WORKSPACE_ROOT} is already excluded from Spotlight"
+elif touch "${CONDUCTOR_WORKSPACE_ROOT}/.metadata_never_index" 2>/dev/null; then
+  success "Excluded ${CONDUCTOR_WORKSPACE_ROOT} from Spotlight"
+  info "Your workspaces stop being reindexed. You lose nothing — you search code with the editor, not Spotlight."
+else
+  # Never a fail: the machine still works, it just works harder than it needs to.
+  warn "Couldn't exclude ${CONDUCTOR_WORKSPACE_ROOT} from Spotlight. Do it by hand:"
+  warn "  touch ${CONDUCTOR_WORKSPACE_ROOT}/.metadata_never_index"
+fi
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 step "Summary"
 report() { # report <label> <value-or-empty>
@@ -349,6 +374,7 @@ report "agent-browser" "$(command -v agent-browser >/dev/null 2>&1 && echo 'inst
 report "codegraph"     "$(command -v codegraph >/dev/null 2>&1 && echo 'installed' || true)"
 report "Claude Code"   "$(command -v claude >/dev/null 2>&1 && echo 'installed' || true)"
 report "Conductor"     "$([[ -d /Applications/Conductor.app ]] && echo 'installed' || true)"
+report "Spotlight"     "$([[ -f "${CONDUCTOR_WORKSPACE_ROOT}/.metadata_never_index" ]] && echo 'workspaces excluded' || true)"
 
 echo ""
 if [[ "$FAILED" -eq 0 ]]; then
@@ -382,6 +408,11 @@ Do exactly this, in order:
 
 Tip: open a fresh terminal window before you start, so the tools installed above
 are picked up everywhere.
+
+If your Mac starts feeling slow after a few days of parallel workspaces, that is
+usually leaked dev servers and browser daemons rather than anything you did:
+  pnpm health            # what is going on, and why
+  pnpm health:clean      # show what would be killed, confirm, kill it
 EOF
   exit 0
 fi
