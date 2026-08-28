@@ -24,7 +24,7 @@ set -uo pipefail
 GITHUB_REPO="koda-sl/baker"
 VERCEL_PROJECT="baker-dashboard"
 REQUIRED_PNPM="10.28.0"
-REQUIRED_NODE_MAJOR="22"
+REQUIRED_NODE_MAJOR="24"
 CONDUCTOR_URL="https://conductor.build"
 # Copy of PREFLIGHT_CODEGRAPH_VERSION. This script runs standalone before the repo
 # exists, so it cannot source preflight.sh. Drift is self-correcting rather than
@@ -146,9 +146,10 @@ brew_install() { # brew_install <formula> <cmd> [--cask]
   fi
 }
 
-# ── Step 3: Node 22 (via nvm) ───────────────────────────────────────────────
-# We pin Node 22 with nvm so a pre-existing Node 24 (the exact clash a new hire
-# hit) never wins, and we write the nvm init lines to the profile ourselves so
+# ── Step 3: Node 24 (via nvm) ───────────────────────────────────────────────
+# We pin Node ${REQUIRED_NODE_MAJOR} with nvm so a stray newer Node already on the
+# machine never wins — the exact clash a new hire hit back when we pinned 22 and
+# their Mac had 24 — and we write the nvm init lines to the profile ourselves so
 # nobody has to hand-edit .zprofile.
 step "Node ${REQUIRED_NODE_MAJOR}"
 node_major() { node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
