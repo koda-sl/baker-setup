@@ -370,6 +370,20 @@ else
   fail "Need Homebrew to install Claude Code."
 fi
 
+# ── Step 10b: Codex (Conductor needs it for OpenAI models) ──────────────────
+# Optional: nothing in the repo requires it, so a failed install warns rather
+# than fails. The hourly routine's second reviewer runs it (scripts/codex-review.mjs).
+step "Codex"
+if command -v codex >/dev/null 2>&1; then
+  success "Codex present"
+elif command -v brew >/dev/null 2>&1; then
+  brew_install codex codex --cask \
+    && success "Codex installed" \
+    || warn "Couldn't install Codex. Run: brew install --cask codex"
+else
+  warn "Need Homebrew to install Codex."
+fi
+
 # ── Step 11: Conductor app ──────────────────────────────────────────────────
 # Conductor is a GUI app (no CLI binary), so we detect the .app bundle rather than
 # a command. Cask: https://formulae.brew.sh/cask/conductor
@@ -431,6 +445,7 @@ report "agent-browser" "$(command -v agent-browser >/dev/null 2>&1 && echo 'inst
 report "baker CLI"     "$(baker --version 2>/dev/null | tr -d '[:space:]')"
 report "codegraph"     "$(command -v codegraph >/dev/null 2>&1 && echo 'installed' || true)"
 report "Claude Code"   "$(command -v claude >/dev/null 2>&1 && echo 'installed' || true)"
+report "Codex"         "$(command -v codex >/dev/null 2>&1 && echo 'installed' || true)"
 report "Conductor"     "$([[ -d /Applications/Conductor.app ]] && echo 'installed' || true)"
 report "Spotlight"     "$([[ -f "${CONDUCTOR_WORKSPACE_ROOT}/.metadata_never_index" ]] && echo 'workspaces excluded' || true)"
 
