@@ -481,11 +481,6 @@ Do exactly this, in order:
 
 Tip: open a fresh terminal window before you start, so the tools installed above
 are picked up everywhere.
-
-If your Mac starts feeling slow after a few days of parallel workspaces, that is
-usually leaked dev servers and browser daemons rather than anything you did:
-  pnpm health            # what is going on, and why
-  pnpm health:clean      # show what would be killed, confirm, kill it
 EOF
   exit 0
 fi
